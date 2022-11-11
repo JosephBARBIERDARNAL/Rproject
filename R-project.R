@@ -7,6 +7,7 @@ library(dplyr)
 library(purrr)
 library(tidyr)
 library(stringr)
+library(stringi)
 
 abstracts = fread("abstracts.txt")
 author_name = fread("author_name.txt")
@@ -59,46 +60,51 @@ data = data[, -c("Freq")]
 
 # Q3 ----
 
-## A ----
 #keep only alphanumerics in abstracts
-data$abstract = gsub("[^[:alpha:][:digit:]]", " ", data$abstract)
+data$abstract = gsub("[^[:alpha:]]", " ", data$abstract)
+
+#fix the case
+data$abstract = tolower(data$abstract)
 
 #keep only words with 3+ letters
 data$abstract = gsub("\\b[[:alpha:]]{1,2}\\b", "", data$abstract)
-data$abstract1 = strsplit(data$abstract, split = " ")
 
 
-## B ----
-#create a vector of words
-words = gsub("[^[:alpha:]]", " ", data$abstract)
-words = unique(unlist(strsplit(words, split = " ")))
-#words = data.frame(words)
-words = as.factor(words)
-words = data.frame(words)
-
-#define a count function
-count = function(word, abstracts){
-  
-  c = 0
-  for (abstract in abstracts){
-    if (word %in% abstract){
-      c = c + 1
-    }
-    return(c)
-  }
+#create a function that take an abstract and remove dupplicate
+my_str_split = function(abstract){
+  x = paste(stri_unique(unlist(strsplit(abstract, split = " "))))
+  output = paste(x, collapse = " ")
+  return(output)
 }
 
+#use our last function for each abstract of the "focus" dataset
+data$short_abstract = lapply(data$abstract, my_str_split)
 
+#paste all short_abstract into one large abstract
+all_short_abs = paste(data$short_abstract, collapse = " ")
 
+#transform all_short_abs into a dataframe: 1 row = 1 word
+abs_list = unlist(strsplit(all_short_abs, " "))
+freq = as.data.frame(abs_list)
 
-#words[,1] %in% unlist(strsplit(data$abstract[1], split = " "))
+#compute word occurence
+freq$one = 1
+freq = freq %>%
+  group_by(abs_list) %>%
+  mutate(occurence = sum(one))
 
+#remove useless feature and duplicate
+freq = freq[, -2]
+freq = distinct(freq)
 
+#create keywords
+percent = round(length(data$abstract)*0.1)
+freq = subset(freq, occurence<=percent & occurence>=5)
 
 
 # Q4 ----
 
-jaki = function(abs1, abs2){
+jaccard = function(abs1, abs2){
   
   abs1 = unlist(strsplit(abs1, split = " "))
   abs2 = unlist(strsplit(abs2, split = " "))
@@ -149,18 +155,20 @@ citation = citation %>%
   group_by(paper_cited) %>%
   mutate(nb_cites = sum(one))
 
-
-
 # Q6 ----
 
 #merge datasets
-names(citation2)[names(citation2) == 'paper_cited'] = 'PaperId'
-new_data = merge(data, citation2, by="PaperId", all.x= TRUE)
+citation = citation[,-2]
+names(citation)[names(citation) == 'paper_cited'] = 'PaperId'
+new_data = merge(data, citation, by="PaperId", allow.cartesian = TRUE)
+
+#create final dataset
 new_data = new_data[, c("PaperId", "abstract", "nb_cites")]
+new_data = distinct(new_data)
 
 # Q7 ----
-
-keyword = as.data.frame(words[100:200, 1])
+x = c("resume ", "recent ", "abstract ", "this", "purpose", "rank")
+keyword = as.data.frame(x)
 keyword$average = NA
 
 #compute average number of citation per/keyword
@@ -168,10 +176,10 @@ for (i in seq(1, nrow(keyword))){
   c = 0
   cites = 0
   
-  cat("Start of the", i, "keyword \n")
+  cat("Start of the", i, "th keyword \n")
   
   for (j in seq(1, nrow(new_data))){
-    if (keyword[i,1] %in% new_data$abstract[j]){
+    if (grepl(pattern = keyword[i,1], x = new_data$abstract[j])){
       c = c + 1
       cites = cites + new_data$nb_cites[j]
     }
@@ -179,9 +187,39 @@ for (i in seq(1, nrow(keyword))){
   keyword$average[i] = cites/c
 }
 
-
 # display the 20 top keywords
-vec = data$Date
-vec = as.numeric(vec)
-vec = sort(vec, decreasing =TRUE)
-top20 = vec[1:20]
+keyword$average = sort(keyword$average, decreasing =TRUE)
+top20 = keyword$x[1:5]
+
+
+
+
+
+#useless code ----
+
+#create a vector of all words
+words = gsub("[^[:alpha:]]", " ", data$abstract)
+words = unique(unlist(strsplit(words, split = " ")))
+
+
+#count word occurence
+sum(stri_count_fixed(str=(all_short_abs), pattern=words[2]))
+stri_count_fixed(str = all_short_abs, pattern = words[2])
+length(all_short_abs[which(all_short_abs==words[2])])
+
+#remove numeric in all_short_abs
+all_short_abs = gsub("[^[:alpha:]]", " ", all_short_abs)
+
+
+frq1 = as.data.frame(unlist(strsplit(all_short_abs, " ")))
+colnames(frq1) = c("var1")
+frq1$freq = table(frq1$var1)
+
+
+data$abstract1 = strsplit(data$abstract, split = " ")
+sum(stri_count_fixed(str=unique(data$abstract), pattern=words[2]))
+
+
+words = as.data.frame(words)
+words$freq[i] = sum(grepl(words[i,1], data$abstract))
+
