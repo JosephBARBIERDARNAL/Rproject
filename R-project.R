@@ -101,6 +101,25 @@ freq = distinct(freq)
 percent = round(length(data$abstract)*0.1)
 freq = subset(freq, occurence<=percent & occurence>=5)
 
+#
+KW = freq$abs_list
+keep_KW = function(abstract){
+  abstract = unlist(strsplit(abstract, split = " "))
+  out = intersect(abstract, KW)
+  out = paste(out, collapse = " ")
+  return(out)
+}
+
+#create a function that take an abstract and return the keywords of the latter
+data$keywords = lapply(data$abstract, keep_KW)
+
+for (i in seq(nrow(data))){
+  data$keywords[i] = keep_KW(data$abstract[i])
+  cat(i, 'th iteration over \n')
+}
+
+#x = unlist(strsplit(data$abstract[1], split = " "))
+#out = intersect(x, KW)
 
 # Q4 ----
 
