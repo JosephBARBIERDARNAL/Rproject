@@ -22,9 +22,9 @@ abstracts$PaperId = as.numeric(abstracts$PaperId)
 paper_author_instit$PaperId = as.numeric(paper_author_instit$PaperId)
 
 #merging datasets
-data = merge(abstracts, paper_info, by='PaperId', all.y = TRUE, all.x = TRUE)
-data = merge(data, paper_author_instit, by='PaperId', all.y = TRUE, all.x = TRUE)
-data = merge(data, author_name, by='AuthorId', all.y = TRUE, all.x = TRUE)
+data = merge(abstracts, paper_info, by='PaperId')
+data = merge(data, paper_author_instit, by='PaperId')
+data = merge(data, author_name, by='AuthorId')
 
 #last changing
 data = data[, -c("DocType")]
@@ -32,12 +32,13 @@ data$Date = str_sub(data$Date, start=1, end=4)
 
 #keep only Bdx institution
 data$OriginalAffiliation = toupper(data$OriginalAffiliation)
-data$present = grepl("BORDEAUX", data$OriginalAffiliation)
+data$present = grepl("BORDEAUX", data$OriginalAffiliation, ignore.case = TRUE)
 data = subset(data, present==TRUE)
 data = data[, -c("present")]
 
 #delete NA
 data = drop_na(data)
+remove(abstracts, author_name, paper_author_instit)
 
 # Q2 ----
 
@@ -48,80 +49,64 @@ data$count_abst = nchar(data$abstract)
 data = subset(data, count_abst>=100)
 data = data[, -c("count_abst")]
 
-#count name occurence
-frequence = as.data.frame(table(data$NormalizedName))
-names(frequence)[names(frequence) == 'Var1'] = 'author_name'
+#count name occurence and keep only >=3
+frequence = data.frame(table(data$AuthorId))
+colnames(frequence) = c("AuthorId", "occurence")
+frequence = subset(frequence, occurence >= 3)
 
-#keep only name occurence >=3 in our dataset
-names(data)[names(data) == 'NormalizedName'] = 'author_name'
-data = merge(data, frequence, by='author_name')
-data = subset(data, Freq>=3)
-data = data[, -c("Freq")]
+#assuming that scientists with the same name but different AuthorId are not the same person
+data$AuthorId = as.factor(data$AuthorId)
+data = merge(data, frequence, by='AuthorId')
+focus_sample = data[, -c("occurence")]
+
+remove(frequence)
 
 # Q3 ----
 
+#keep only PaperId and abstract
+data = unique(data[, 2:3])
+
 #keep only alphanumerics in abstracts
-data$abstract = gsub("[^[:alpha:]]", " ", data$abstract)
+data$abstract = gsub("[^[:alpha:]]", " ", data$abstract) #[:digit:]
 
 #fix the case
-data$abstract = tolower(data$abstract)
+data$abstract = toupper(data$abstract)
 
 #keep only words with 3+ letters
 data$abstract = gsub("\\b[[:alpha:]]{1,2}\\b", "", data$abstract)
 
-
-#create a function that take an abstract and remove dupplicate
-my_str_split = function(abstract){
-  x = paste(stri_unique(unlist(strsplit(abstract, split = " "))))
-  output = paste(x, collapse = " ")
-  return(output)
-}
-
-#use our last function for each abstract of the "focus" dataset
-data$short_abstract = lapply(data$abstract, my_str_split)
-
-#paste all short_abstract into one large abstract
-all_short_abs = paste(data$short_abstract, collapse = " ")
-
-#transform all_short_abs into a dataframe: 1 row = 1 word
-abs_list = unlist(strsplit(all_short_abs, " "))
-freq = as.data.frame(abs_list)
-
-#compute word occurence
-freq$one = 1
-freq = freq %>%
-  group_by(abs_list) %>%
-  mutate(occurence = sum(one))
-
-#remove useless feature and duplicate
-freq = freq[, -2]
-freq = distinct(freq)
-
-#create keywords
-percent = round(length(data$abstract)*0.1)
-freq = subset(freq, occurence<=percent & occurence>=5)
+#create "words": the list of all abstract without dupplicates
+all_words = strsplit(data$abstract, " ")
+short_abs = lapply(all_words, unique)
+freq_kw = table(unlist(short_abs)) # finding in how many rows each word occurs
+freq_kw = as.data.table(freq_kw) # setting freqs as a datatable
+freq_kw = freq_kw[N>=5 & N<= 0.1*length(data$abstract)]
 
 #
-KW = freq$abs_list
-keep_KW = function(abstract){
-  abstract = unlist(strsplit(abstract, split = " "))
-  out = intersect(abstract, KW)
-  out = paste(out, collapse = " ")
-  return(out)
+liste = list()
+for (i in 1:length(data$abstract)) {
+  keywords = strsplit(short_abs[[i]], " ")
+  PaperId = rep(data$PaperId[i], length(keywords))
+  temp = data.table(PaperId, keywords)
+  liste[[i]] = temp
 }
 
-#create a function that take an abstract and return the keywords of the latter
-data$keywords = lapply(data$abstract, keep_KW)
+data_kw = rbindlist(liste)
+data_kw = data_kw[keywords %in% freq_kw$V1]
 
-for (i in seq(nrow(data))){
-  data$keywords[i] = keep_KW(data$abstract[i])
-  cat(i, 'th iteration over \n')
-}
+#create the variable keyword for each PaperId
+data = data_kw %>%
+  group_by(PaperId) %>%
+  mutate(keyword = paste(keywords, collapse = " "))
+data = data[, -2]
+data = distinct(data)
 
-#x = unlist(strsplit(data$abstract[1], split = " "))
-#out = intersect(x, KW)
+remove(all_words, keywords, liste, short_abs, temp, i, PaperId)
 
 # Q4 ----
+
+data = merge(data, focus_sample, by = "PaperId")
+remove(focus_sample)
 
 jaccard = function(abs1, abs2){
   
@@ -177,32 +162,51 @@ citation = citation %>%
 # Q6 ----
 
 #merge datasets
-citation = citation[,-2]
+citation = citation[, c(1,7)]
 names(citation)[names(citation) == 'paper_cited'] = 'PaperId'
 new_data = merge(data, citation, by="PaperId", allow.cartesian = TRUE)
 
 #create final dataset
-new_data = new_data[, c("PaperId", "abstract", "nb_cites")]
+new_data = new_data[, c("PaperId", "nb_cites", "keyword")]
 new_data = distinct(new_data)
 
 # Q7 ----
-x = c("resume ", "recent ", "abstract ", "this", "purpose", "rank")
-keyword = as.data.frame(x)
+
+keyword = freq_kw[, 1]
 keyword$average = NA
+
+compute_average = function(kw, dataframe=new_data){
+  
+  cat("\n", kw, "\n")
+  
+  #compute the number of abstract the kw is present in
+  #c = sum(grepl(pattern = kw, x = dataframe$keyword))
+  c = str_count(dataframe$keyword, pattern = kw)
+  
+  #compute sum of citations
+  cites = sum(dataframe$nb_cites[grepl(pattern = kw, x = dataframe$keyword)])
+  
+  #compute average
+  output = cites/c
+  
+  return(output)
+}
+
+keyword$average = lapply(X=keyword$V1, FUN=compute_average)
+
 
 #compute average number of citation per/keyword
 for (i in seq(1, nrow(keyword))){
+  
+  #initialisation
   c = 0
   cites = 0
-  
   cat("Start of the", i, "th keyword \n")
   
-  for (j in seq(1, nrow(new_data))){
-    if (grepl(pattern = keyword[i,1], x = new_data$abstract[j])){
-      c = c + 1
-      cites = cites + new_data$nb_cites[j]
-    }
-  }
+  #compute average of the i-th keyword
+  sapply(X = new_data$keyword, test_presence(kw = keyword$V1[i],
+                                             abstracts = new_data$keyword,
+                                             citations = new_data$nb_cites))
   keyword$average[i] = cites/c
 }
 
@@ -242,3 +246,110 @@ sum(stri_count_fixed(str=unique(data$abstract), pattern=words[2]))
 words = as.data.frame(words)
 words$freq[i] = sum(grepl(words[i,1], data$abstract))
 
+#KW = paste(freq$abs_list, collapse = " ")
+keep_KW2 = function(abstract, Kw = KW){
+  x = c(abstract, Kw)
+  out = Reduce(intersect, strsplit(x, " "))
+  return(out)
+}
+
+
+#create a function that take an abstract and remove dupplicate
+my_str_split = function(abstract){
+  x = paste(stri_unique(unlist(strsplit(abstract, split = " "))))
+  output = paste(x, collapse = " ")
+  return(output)
+}
+
+#use our last function for each abstract of the "focus" dataset
+data$short_abstract = sapply(data$abstract, my_str_split)
+data$short_abstract = as.character(data$short_abstract)
+
+
+#paste all short_abstract into one large abstract
+all_short_abs = paste(data$short_abstract, collapse = " ")
+
+#transform all_short_abs into a dataframe: 1 row = 1 word
+abs_list = unlist(strsplit(all_short_abs, " "))
+freq = data.frame(abs_list)
+
+#transform all_short_abs into a dataframe: 1 row = 1 word
+short_abs = unlist(short_abs)
+freq = data.table(short_abs)
+
+#compute word occurence
+freq$one = 1
+freq = freq %>%
+  group_by(short_abs) %>%
+  mutate(occurence = sum(one))
+
+#remove useless feature and duplicate
+freq = freq[, -2]
+freq = distinct(freq)
+
+#create keywords
+percent = round(length(data$abstract)*0.1)
+freq = subset(freq, occurence<=percent & occurence>=5)
+
+#create a function that take an abstract and remove dupplicate
+my_str_split = function(abstract){
+  x = paste(stri_unique(unlist(strsplit(abstract, split = " "))))
+  output = paste(x, collapse = " ")
+  return(output)
+}
+
+#use our last function for each abstract of the "focus" dataset
+data$short_abstract = sapply(data$abstract, my_str_split)
+data$short_abstract = as.character(data$short_abstract)
+
+
+#paste all short_abstract into one large abstract
+all_short_abs = paste(data$short_abstract, collapse = " ")
+
+#transform all_short_abs into a dataframe: 1 row = 1 word
+abs_list = unlist(strsplit(all_short_abs, " "))
+freq = data.frame(abs_list)
+
+#compute word occurence
+freq$one = 1
+freq = freq %>%
+  group_by(abs_list) %>%
+  mutate(occurence = sum(one))
+
+#remove useless feature and duplicate
+freq = freq[, -2]
+freq = distinct(freq)
+
+#create keywords
+percent = round(length(data$abstract)*0.1)
+freq = subset(freq, occurence<=percent & occurence>=5)
+
+#create a function that takes an abstract and returns the keywords of the latter
+keep_KW = function(abstract, KW = freq$abs_list){
+  abstract = unlist(strsplit(abstract, split = " ", fixe = TRUE))
+  out = paste(intersect(abstract, KW), collapse = " ")
+  #cat(out, "\n")
+  return(out)
+}
+
+
+#1 (should work but seems infinite)
+data$keyword = sapply(X=data$short_abstract, FUN=keep_KW)
+
+#2 (works but a bit long)
+for (i in seq(nrow(data))){
+  data$keywords[i] = keep_KW(data$short_abstract[i])
+  cat(i, 'th iteration over \n')
+}
+data_kw = subset(data, select = c("PaperId", "keywords"))
+
+#save keywords
+write.csv2(data_kw, file='data_kw')
+test = read.csv2('data_kw')
+
+for (j in seq(1, nrow(new_data))){
+  if (grepl(pattern = keyword[i,1], x = new_data$keyword[j])){
+    c = c + 1
+    cites = cites + new_data$nb_cites[j]
+  }
+}
