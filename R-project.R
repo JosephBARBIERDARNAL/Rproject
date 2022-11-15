@@ -8,6 +8,7 @@ library(purrr)
 library(tidyr)
 library(stringr)
 library(stringi)
+library(combinat)
 
 abstracts = fread("abstracts.txt")
 author_name = fread("author_name.txt")
@@ -106,21 +107,34 @@ remove(all_words, keywords, liste, short_abs, temp, i, PaperId)
 # Q4 ----
 
 data = merge(data, focus_sample, by = "PaperId")
-remove(focus_sample)
+remove(focus_sample, all_words, freq_kw,
+       keywords, liste, temp, short_abs, i,
+       PaperId, paper_info, references, data_kw)
 
 jaccard = function(abs1, abs2){
-  
   abs1 = unlist(strsplit(abs1, split = " "))
   abs2 = unlist(strsplit(abs2, split = " "))
-
   common_word = length(intersect(abs1, abs2))
   total_distinct_word = length(abs1) + length(abs2) - common_word
-  
   return(common_word/total_distinct_word)
 }
 
-#data$PaperId2 = data$PaperId
-#datest = expand.grid(data$PaperId, data$PaperId2)
+x = subset %>%
+  group_by(AuthorId) %>%
+  expand.grid(subset$keyword)
+
+
+subset = data[, c(2,3)]
+subset = distinct(subset)
+x = subset %>%
+  group_by(AuthorId) %>%
+  combn(x=subset$keyword, m=2, fun=jaccard)
+
+  
+#x – source vectorielle pour les combinaisons
+#m – nombre d’éléments à prendre
+#fun – fonction à appliquer à chaque combinaison (peut être nulle)
+#simplifier – logique, si FALSE, renvoie une liste, sinon renvoie un vecteur ou un array
 
 
 # Q5 ----
@@ -175,44 +189,51 @@ new_data = distinct(new_data)
 keyword = freq_kw[, 1]
 keyword$average = NA
 
-compute_average = function(kw, dataframe=new_data){
-  
-  cat("\n", kw, "\n")
-  
-  #compute the number of abstract the kw is present in
-  #c = sum(grepl(pattern = kw, x = dataframe$keyword))
-  c = str_count(dataframe$keyword, pattern = kw)
-  
-  #compute sum of citations
-  cites = sum(dataframe$nb_cites[grepl(pattern = kw, x = dataframe$keyword)])
-  
-  #compute average
-  output = cites/c
-  
-  return(output)
-}
 
-keyword$average = lapply(X=keyword$V1, FUN=compute_average)
+
+
+
 
 
 #compute average number of citation per/keyword
 for (i in seq(1, nrow(keyword))){
   
   #initialisation
-  c = 0
-  cites = 0
+  #c = 0
+  #cites = 0
   cat("Start of the", i, "th keyword \n")
   
   #compute average of the i-th keyword
-  sapply(X = new_data$keyword, test_presence(kw = keyword$V1[i],
-                                             abstracts = new_data$keyword,
-                                             citations = new_data$nb_cites))
-  keyword$average[i] = cites/c
+  keyword$average[i] = compute_presence(kw=keyword$V1[i])
 }
+
+keyword$average = lapply(keyword$V1, compute_average)
+
 
 # display the 20 top keywords
 keyword$average = sort(keyword$average, decreasing =TRUE)
 top20 = keyword$x[1:5]
+
+compute_average = function(kw, dataframe=new_data){
+  
+  #init
+  cat('\n', kw, '\n')
+  c=0
+  cites=0
+  
+  #loop over abstract
+  for (j in seq(1, nrow(new_data))){
+    if (str_detect(pattern = kw, string = new_data$keyword[j])){
+      c = c + 1
+      cites = cites + new_data$nb_cites[j]
+    }
+  }
+  
+  #compute average
+  average = cites/c
+  return(average)
+}
+
 
 
 
@@ -347,9 +368,25 @@ data_kw = subset(data, select = c("PaperId", "keywords"))
 write.csv2(data_kw, file='data_kw')
 test = read.csv2('data_kw')
 
-for (j in seq(1, nrow(new_data))){
-  if (grepl(pattern = keyword[i,1], x = new_data$keyword[j])){
-    c = c + 1
-    cites = cites + new_data$nb_cites[j]
-  }
+compute_average = function(kw, dataframe=new_data){
+  
+  cat("\n", kw, "\n")
+  
+  #compute the number of abstract the kw is present in
+  c = sum(kw %in% dataframe$keyword)
+  
+  
+  #c = sum(grepl(pattern = kw, x = dataframe$keyword))
+  c = str_count(dataframe$keyword, pattern = kw)
+  
+  #compute sum of citations
+  cites = sum(dataframe$nb_cites[grepl(pattern = kw, x = dataframe$keyword)])
+  
+  #compute average
+  output = cites/c
+  
+  return(output)
 }
+
+keyword$average = lapply(X=keyword$V1, FUN=compute_average)
+
