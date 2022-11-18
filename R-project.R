@@ -8,8 +8,6 @@ library(ggplot2)      #plot Q9
 library(hrbrthemes)   #plot Q9
 library(ggrepel)      #plot Q9
 
-library(dplyr)
-
 abstracts = fread("abstracts.txt")
 author_name = fread("author_name.txt")
 paper_author_instit = fread("paper_author_instit.txt")
