@@ -106,48 +106,48 @@ data_kw = data_kw[keywords %in% freq_kw$V1]
 data = data_kw %>%
   group_by(PaperId) %>%
   mutate(keyword = paste(keywords, collapse = " "))
-data = data[, -2]
-data = distinct(data)
 
-remove(all_words, keywords, liste, short_abs, temp,
-       i, PaperId, freq_kw, data_kw)
+data = data_kw[, .(keyword = paste(keywords, collapse = " ")),
+                                  by = PaperId]
+
+remove(all_words, keywords, liste, short_abs, temp, i, PaperId, freq_kw, data_kw)
 
 note = note + 2
 
 # Q4 ----
 
-#create a dataset with AuthorId and keywords
-data2 = merge(data, focus_sample, by = "PaperId")
-data2 = data2[, c(2,3)]
-data2 = distinct(data2)
-
-#function that computes jaccard index for two papers
-jaccard = function(abs1, abs2){
-  abs1 = as.character(abs1)
-  abs2 = as.character(abs2)
-  abs1 = unlist(strsplit(abs1, split = " "))
-  abs2 = unlist(strsplit(abs2, split = " "))
-  common_word = length(intersect(abs1, abs2))
-  total_distinct_word = length(abs1) + length(abs2) - common_word
-  return(common_word*100/total_distinct_word)
-}
-
-#function that computes specialization measure 
-specialization = function(author, dataframe=data2){
+##create a dataset with AuthorId and keywords
+#data2 = merge(data, focus_sample, by = "PaperId")
+#data2 = data2[, c(2,3)]
+#data2 = distinct(data2)
+#
+##function that computes jaccard index for two papers
+##jaccard = function(abs1, abs2){
+#  abs1 = as.character(abs1)
+#  abs2 = as.character(abs2)
+#  abs1 = unlist(strsplit(abs1, split = " "))
+#  abs2 = unlist(strsplit(abs2, split = " "))
+#  common_word = length(intersect(abs1, abs2))
+#  total_distinct_word = length(abs1) + length(abs2) - common_word
+#  return(common_word*100/total_distinct_word)
+#}
+#
+##function that computes specialization measure 
+#specialization = function(author, dataframe=data2){
   
   #compute all jaccards for one author
-  daf = subset(dataframe, AuthorId==author)
-  n = nrow(daf)
-  daf = data.frame(combn(x=daf$X2, m=2))
-  daf = data.frame(t(daf))
-  daf$speciali = apply(X = daf, MARGIN = 1, FUN = jaccard)
-  
-  #compute specialization
-  denominator = n * (n-1)
-  daf$X3 = NA
-  specialisation = round(sum(daf$X3)/denominator, digits = 4)
-  return(specialisation)
-}
+#  daf = subset(dataframe, AuthorId==author)
+#  n = nrow(daf)
+#  daf = data.frame(combn(x=daf$X2, m=2))
+#  daf = data.frame(t(daf))
+#  daf$speciali = apply(X = daf, MARGIN = 1, FUN = jaccard)
+#  
+#  #compute specialization
+#  denominator = n * (n-1)
+#  daf$X3 = NA
+#  specialisation = round(sum(daf$X3)/denominator, digits = 4)
+#  return(specialisation)
+#}
 
 #daf = subset(data2, AuthorId==83303)
 #n = nrow(daf)
@@ -159,22 +159,22 @@ specialization = function(author, dataframe=data2){
 #specialisation = round(sum(df$X3)/denominator, digits = 4)
 #apply(X = df, MARGIN = 1, FUN = jaccard)
 
-data2$spec = sapply(X = data2$AuthorId, FUN = specialization)
-
-data2$spec = NA
-for (i in seq(1, nrow(data2))){
-  data2$spec[i] = specialization(data2$AuthorId[i])
-  cat("\n", i, "-th iteration over \n")
-}
-
-specialization(author = 83303)
-test = subset(data2, AuthorId==83303)
-n = nrow(test)
-test = data.frame(combn(x=test$keyword, m=2))
-y = data.frame(t(test))
-y$X3 = apply(X = y, MARGIN = 1, FUN = specialization)
-denominator = n * (n-1)
-specialisation = round(sum(y$X3)/denominator, digits = 4)
+#data2$spec = sapply(X = data2$AuthorId, FUN = specialization)
+#
+#data2$spec = NA
+#for (i in seq(1, nrow(data2))){
+#  data2$spec[i] = specialization(data2$AuthorId[i])
+#  cat("\n", i, "-th iteration over \n")
+#}
+#
+#specialization(author = 83303)
+#test = subset(data2, AuthorId==83303)
+#n = nrow(test)
+#test = data.frame(combn(x=test$keyword, m=2))
+#y = data.frame(t(test))
+#y$X3 = apply(X = y, MARGIN = 1, FUN = specialization)
+#denominator = n * (n-1)
+#specialisation = round(sum(y$X3)/denominator, digits = 4)
 
 
 # Q5 ----
@@ -186,91 +186,81 @@ cite = merge(paper_info, references, by="PaperId", all.x = TRUE, all.y = TRUE)
 
 #some small changes
 cite = cite[,-c("DocType")]
-cite = cite[complete.cases(cite), ]
+cite = cite[complete.cases(cite[, 1:3])]
 cite$Date = substr(cite$Date, start=1, stop=4)
 
 #get date from cited paper
 cite2 = cite[, -c("paper_cited")]
-names(cite2)[names(cite2) == 'Date'] = 'Publication'
-names(cite)[names(cite) == 'Date'] = 'Date_cited'
+names(cite2)[names(cite2) == 'Date'] = 'Date_Publication'
+names(cite)[names(cite) == 'Date'] = 'Date_Citing'
 names(cite2)[names(cite2) == 'PaperId'] = 'paper_cited'
 
 #merge
 cite$paper_cited = as.numeric(cite$paper_cited)
-citation = distinct(merge(cite, cite2, by="paper_cited", allow.cartesian = TRUE))
+citation = merge(cite, cite2, by="paper_cited", allow.cartesian = TRUE)
 
 #compute years difference
-citation$Date_cited = as.integer(citation$Date_cited)
-citation$Publication = as.integer(citation$Publication)
-citation$difference = citation$Date_cited - citation$Publication
-
-#compute nb_cites
-citation$one = 1
-citation = citation %>%
-  group_by(paper_cited) %>%
-  mutate(nb_cites = sum(one))
-#TODO: TEST WITH LENGHT FUNCTION
+citation$Date_Citing = as.integer(citation$Date_Citing)
+citation$Date_Publication = as.integer(citation$Date_Publication)
+citation$difference = citation$Date_Citing - citation$Date_Publication
 
 #remove citations 5 years after publication
-citation_5years = subset(citation, difference <= 5)
+citation_5years = subset(citation, difference <= 5 & difference >= 0)
+
+#compute nb_cites in a 5 years range
+citation_5years = citation_5years[, .(nb_cites = .N),
+                     by = paper_cited]
 
 note = note + 3
 
 # Q6 ----
 
 #merge datasets
-citation_5years = citation_5years[, c(1,7)]
 names(citation_5years)[names(citation_5years) == 'paper_cited'] = 'PaperId'
 new_data = merge(data, citation_5years, by="PaperId", allow.cartesian = TRUE)
 
-#create final dataset
-new_data = new_data[, c("PaperId", "nb_cites", "keyword")]
-new_data = distinct(new_data)
-
-remove(citation_5years, cite, cite2, paper_info, references, data_kw, freq_kw)
-
+remove(citation_5years, cite, cite2, paper_info, references)
 note = note + 1
 
 # Q7 ----
 
 #compute average number of citations for each keyword
-new_data = new_data[, c("PaperId", "nb_cites", "keyword")]
-new_data = distinct(new_data)
 new_data = as.data.table(new_data)
 new_data1 = (new_data[, .(PaperId, nb_cites, keyword = strsplit(keyword, " "))]
              [, .(keyword = unlist(keyword)), by = .(nb_cites)]
              [, list(mean(nb_cites)), by = .(keyword)])
 
 #display 20 top keywords
-new_data1 = new_data1 %>% arrange(desc(V1))
-new_data1[1:20, ]
-
+new_data1 = new_data1[order(-V1)]
+new_data1[1:20,]
 remove(new_data1)
 
 note = note + 1
 
 # Q8 ----
 
+#compute nb_cites for all years
+citation = citation[, list(nb_cites = .N),
+                    by = paper_cited]
+
 #add number of citation for all years
-citation = citation[, c(1,7)]
+#citation = citation[, c(1,7)]
 names(citation)[names(citation) == 'paper_cited'] = 'PaperId'
 new_data = merge(data, citation, by="PaperId", allow.cartesian = TRUE)
-new_data = distinct(new_data)
 
 #compute number of cites for each scientist
 scientist = merge(focus_sample[, c(1,2,6)], new_data[,c(1,3)], by="PaperId", all.x = TRUE)
-scientists = scientist %>%
-  group_by(AuthorId) %>%
-  mutate(mean_cites = round(mean(nb_cites, na.rm=TRUE), digits = 2),
-         total_cites = sum(nb_cites, na.rm=TRUE),
-         total_pub = round(total_cites/mean_cites))
-scientists = distinct(scientists[, -c(1,4)])
+scientists = scientist[, .(mean_cites = mean(nb_cites, na.rm=TRUE),
+                           total_cites = sum(nb_cites, na.rm=TRUE)),
+                       by = AuthorId]
 
-#assuming NA = 0
-scientists[is.na(scientists)] = 0
+#deducting the total number of pub
+scientists$tot_pub = scientists$total_cites/scientists$mean_cites
 
-remove(citation, data, new_data, scientist)
+scientist_name = unique(focus_sample[, c(1,6)])
+scientists = merge(scientists, scientist_name, by="AuthorId")
 
+remove(citation, data, new_data, scientist, scientist_name)
 note = note + 2
 
 # Q9 ----
@@ -291,9 +281,9 @@ scatter = ggplot(scientists, aes(x=mean_cites, y=total_cites)) +
   xlab("Average number of citations") +
   xlim(-50, 850) +
   ggtitle("Correlation between specialization and citations \nin Bordeaux scientists") +
-  geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) +
+  geom_smooth(method=lm , color="red", fill="#69b3a2", se=TRUE) + 
   theme_ipsum() +
-  geom_label_repel(data = subset(scientists, mean_cites > 400), 
+  geom_label_repel(data = subset(scientists, mean_cites > 700), 
                      aes(label = Name, size = NULL, color = NULL))
 
 scatter
@@ -536,3 +526,10 @@ compute_average = function(kw, dataframe=new_data){
   average = cites/c
   return(average)
 }
+
+#library(dplyr)
+#scientists = scientist %>%
+#  group_by(AuthorId) %>%
+#  mutate(mean_cites = round(mean(nb_cites, na.rm=TRUE), digits = 2),
+#         total_cites = sum(nb_cites, na.rm=TRUE),
+#         total_pub = round(total_cites/mean_cites))
