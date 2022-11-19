@@ -1,5 +1,6 @@
 # Rproject
 
+Subjec can be find [here](https://meek-parfait-60672c.netlify.app/docs/R%20programming%20--%20Assignment.pdf)\
 
 Final graph obtained at Q9.\
 Because we were unable to complete Q4, the specialization measure is a false measure, calculated as follows: \
