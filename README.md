@@ -1,8 +1,8 @@
 # Rproject
 
 
-Final graph obtained at Q9.
-Because we weren't able to complete Q4, the specialization measure is a fake one, compute the following way: \
+Final graph obtained at Q9.\
+Because we were unable to complete Q4, the specialization measure is a false measure, calculated as follows: \
 $Specialization = (Average \ number \ of \ citation \times 2) + X$\
 $X \sim \mathcal{N}(0\,600)$
 
